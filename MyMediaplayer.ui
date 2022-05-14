@@ -17,7 +17,7 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QLabel" name="label_2">
+      <widget class="QLabel" name="curTimeLabel">
        <property name="text">
         <string>00:00</string>
        </property>
@@ -31,7 +31,7 @@
       </widget>
      </item>
      <item>
-      <widget class="QLabel" name="label">
+      <widget class="QLabel" name="totalTimelabel">
        <property name="text">
         <string/>
        </property>
@@ -54,7 +54,7 @@
     </layout>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_2">
+    <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="10,2">
      <item>
       <widget class="QWidget" name="playWidget" native="true"/>
      </item>
