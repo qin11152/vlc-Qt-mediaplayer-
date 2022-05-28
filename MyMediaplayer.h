@@ -47,6 +47,8 @@ public slots:
     void onSingleButtonClicked();
     //刷新按钮，为了测试动态添加一个播放连接用
     void onSignalFreshButtonClicked();
+    //当播放列表item被点击
+    void onSignalListWidItemClicked(QListWidgetItem* item);
 
 private:
     //初始化数据
@@ -57,9 +59,16 @@ private:
     void initConnect();
     //释放vlc
     void freeVlc();
+    //清空播放列表
+    void clearPlayList();
     //把毫秒转化为分：秒的形式 
     void transferTime(QString& time, int msTime);
-    void setplayList();
+    //设置播放列表
+    void addToPlayList(QString path);
+    //根据index播放列表中视频
+    void playVideoAcordIndex(int idx);
+    //设置listwidget中当前项
+    void setListWidCurrentRow();
 
 protected:
     //vlc回调事件的处理
@@ -76,6 +85,8 @@ private:
 
     bool m_bIsSingleCycle{ false };         //是否单曲循环
     std::vector<QString> m_vecPlayList;     //播放列表
+    std::vector<QString> m_vecPlayedVideoPathList;   //所有已经播放过的视频路径列表
+    std::vector<QString> m_vecPlayedVideoNameList;  //播放过的视频的名称，顺序和路径列表一致
     int m_iCurVideoPos{ -1 };       //当前视频在列表中的位置
     bool m_bIsPlay{ false };       //是否正在播放
     QString m_strCurPath{ "" };     //当前要播放的视频文件的路径

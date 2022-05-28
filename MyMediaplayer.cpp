@@ -8,6 +8,7 @@ MyMediaplayer::MyMediaplayer(QWidget *parent)
 {
     ui.setupUi(this);
     initData();
+    initVlcData();
     initConnect();
     m_ptrThis = this;
 }
@@ -53,25 +54,26 @@ void MyMediaplayer::onStopCurrentVideo()
 
 void MyMediaplayer::onOpenPushButtonClicked()
 {
-    m_vecPlayList.clear();
-    if (m_ptrVlcInstance)
-    {
-        freeVlc();
-    }
     QStringList tmp = QFileDialog::getOpenFileNames(this, u8"打开视频", ".", u8"视频文件(*.mp4 *.mp3 *.flv *.3gp *.rmvb)");
     if (tmp.empty())
     {
         return;
     }
+    int nextIndex = m_vecPlayList.size();
     for (auto& item : tmp)
     {
-        if (std::find(m_vecPlayList.begin(), m_vecPlayList.end(), item) == m_vecPlayList.end())
+        auto items = QDir::toNativeSeparators(item);
+        //获取视频名字
+        if (std::find(m_vecPlayList.begin(), m_vecPlayList.end(), items) == m_vecPlayList.end())
         {
-            m_vecPlayList.push_back(QDir::toNativeSeparators(item));
+            auto pathList = items.split('\\');
+            m_vecPlayList.push_back(items);
+            addToPlayList(items);
+            ui.listWidget->addItem(pathList[pathList.size()-1]);
         }
     }
-    m_strCurPath = QDir::toNativeSeparators(tmp[0]);
-    setplayList();
+    //播放这次打开的第一个视频
+    playVideoAcordIndex(nextIndex);
 }
 
 void MyMediaplayer::onPausePushButtonClicked()
@@ -136,6 +138,12 @@ void MyMediaplayer::onSignalFreshButtonClicked()
     return;
 }
 
+void MyMediaplayer::onSignalListWidItemClicked(QListWidgetItem* item)
+{
+    int row = ui.listWidget->row(item);
+    playVideoAcordIndex(row);
+}
+
 void MyMediaplayer::initData()
 {
     ui.VolumeSlider->setMinimum(0);
@@ -149,22 +157,18 @@ bool MyMediaplayer::initVlcData()
     m_ptrVlcInstance = libvlc_new(0, NULL);
     if (!m_ptrVlcInstance)
     {
-        qDebug() << "qqqq create vlc failed";
-        qDebug() << libvlc_errmsg;
         freeVlc();
         return false;
     }
     m_ptrListMediaPlayer = libvlc_media_list_player_new(m_ptrVlcInstance);
     if (!m_ptrListMediaPlayer)
     {
-        qDebug() << "qqqq create m_ptrListMediaPlayer failed";
         freeVlc();
         return false;
     }
     m_ptrMediaList = libvlc_media_list_new(m_ptrVlcInstance);
     if (!m_ptrMediaList)
     {
-        qDebug() << "qqqq create m_ptrMediaList failed";
         freeVlc();
         return false;
     }
@@ -174,9 +178,10 @@ bool MyMediaplayer::initVlcData()
     if (!m_ptrMediaPlayer)
     {
         freeVlc();
-        qDebug() << "qqqq my media player failed";
         return false;
     }
+    libvlc_media_list_player_set_media_list(m_ptrListMediaPlayer, m_ptrMediaList);
+    libvlc_media_list_player_set_media_player(m_ptrListMediaPlayer, m_ptrMediaPlayer);
     libvlc_event_manager_t* em = libvlc_media_player_event_manager(m_ptrMediaPlayer);
     libvlc_event_attach(em, libvlc_MediaPlayerTimeChanged, vlcEvents, this);
     libvlc_event_attach(em, libvlc_MediaPlayerEndReached, vlcEvents, this);
@@ -185,9 +190,8 @@ bool MyMediaplayer::initVlcData()
     libvlc_event_attach(em, libvlc_MediaPlayerPaused, vlcEvents, this);
     libvlc_event_attach(em, libvlc_MediaPlayerPositionChanged, vlcEvents, this);
     libvlc_event_attach(em, libvlc_MediaPlayerLengthChanged, vlcEvents, this);
-    libvlc_event_attach(em, libvlc_MediaPlayerTitleChanged, vlcEvents, this);
-    libvlc_event_attach(em, libvlc_MediaPlayerVout, vlcEvents, this);
-    //libvlc_media_player_set_hwnd(m_ptrMediaPlayer, (void *)ui.playWidget->winId());
+    libvlc_event_attach(em, libvlc_MediaPlayerMediaChanged, vlcEvents, this);
+    libvlc_media_player_set_hwnd(m_ptrMediaPlayer, (void*)ui.playWidget->winId());
     return true;
 }
 
@@ -199,11 +203,11 @@ void MyMediaplayer::initConnect()
     connect(ui.stopPushButton, &QPushButton::clicked, this, &MyMediaplayer::onStopPushButtonClicked);
     connect(ui.horizontalSlider, &QSlider::sliderMoved, this, &MyMediaplayer::onSliderRelease);
     connect(ui.pushButton, &QPushButton::clicked, this, &MyMediaplayer::onSingleButtonClicked);
+    connect(ui.listWidget, &QListWidget::itemClicked, this, &MyMediaplayer::onSignalListWidItemClicked);
     connect(ui.VolumeSlider, &QSlider::valueChanged, this, [&](int val)
         {
             if (nullptr != m_ptrMediaPlayer)
             {
-                qDebug() << "qqqq val:" << val;
                 libvlc_audio_set_volume(m_ptrMediaPlayer, val);
             }
         });
@@ -237,6 +241,27 @@ void MyMediaplayer::freeVlc()
     {
         libvlc_media_list_release(m_ptrMediaList);
         m_ptrMediaList = nullptr;
+    }
+}
+
+void MyMediaplayer::clearPlayList()
+{
+    //先停止播放
+    if (nullptr != m_ptrListMediaPlayer)
+    {
+        if (libvlc_media_list_player_is_playing(m_ptrListMediaPlayer))
+        {
+            libvlc_media_list_player_pause(m_ptrListMediaPlayer);
+        }
+    }
+    if (nullptr != m_ptrMediaList)
+    {
+        int cnt = libvlc_media_list_count(m_ptrMediaList);
+        //按照数量移除所有的视频资源
+        for (int i = 0; i < cnt; ++i)
+        {
+            libvlc_media_list_remove_index(m_ptrMediaList, 0);
+        }
     }
 }
 
@@ -274,46 +299,14 @@ void MyMediaplayer::transferTime(QString& time, int msTime)
     }
 }
 
-void MyMediaplayer::setplayList()
+void MyMediaplayer::addToPlayList(QString path)
 {
-    if (m_ptrVlcInstance)
-    {
-        freeVlc();
-    }
-    if (!initVlcData())
-    {
-        return;
-    }
-    bool first = true;
-    for (auto& item : m_vecPlayList)
-    {
-        qDebug() << "qqqq path is" << item.toUtf8().data();
-        m_ptrMedia = libvlc_media_new_path(m_ptrVlcInstance, item.toUtf8().data());
-        if (m_ptrMedia)
-        {
-            qDebug() << "qqqq create media succ";
-        }
-        else
-        {
-            qDebug() << "qqqq create media failed";
-        }
-        libvlc_media_list_add_media(m_ptrMediaList, m_ptrMedia);
-        libvlc_media_parse(m_ptrMedia);
-        if (first)
-        {
-            first = false;
-            int time = libvlc_media_get_duration(m_ptrMedia);
-            QString strTime = "";
-            ui.horizontalSlider->setMaximum(time);
-            ui.horizontalSlider->setMinimum(0);
-            transferTime(strTime, time);
-            ui.totalTimelabel->setText(strTime);
-        }
-        libvlc_media_release(m_ptrMedia);
-    }
+    m_ptrMedia = libvlc_media_new_path(m_ptrVlcInstance, path.toUtf8().data());
+    libvlc_media_list_add_media(m_ptrMediaList, m_ptrMedia);
+    libvlc_media_parse(m_ptrMedia);
+    libvlc_media_release(m_ptrMedia);
     m_ptrMedia = nullptr;
-    libvlc_media_list_player_set_media_list(m_ptrListMediaPlayer, m_ptrMediaList);
-    libvlc_media_list_player_set_media_player(m_ptrListMediaPlayer, m_ptrMediaPlayer);
+    //设置循环方式
     if (m_bIsSingleCycle)
     {
         libvlc_media_list_player_set_playback_mode(m_ptrListMediaPlayer, libvlc_playback_mode_repeat);
@@ -322,7 +315,23 @@ void MyMediaplayer::setplayList()
     {
         libvlc_media_list_player_set_playback_mode(m_ptrListMediaPlayer, libvlc_playback_mode_loop);
     }
-    libvlc_media_player_set_hwnd(m_ptrMediaPlayer, (void*)ui.playWidget->winId());
+}
+
+void MyMediaplayer::playVideoAcordIndex(int idx)
+{
+    m_iCurVideoPos = idx;
+    setListWidCurrentRow();
+    if (nullptr == m_ptrListMediaPlayer)
+    {
+        return;
+    }
+    onPauseCurrentVideo();
+    libvlc_media_list_player_play_item_at_index(m_ptrListMediaPlayer,idx);
+}
+
+void MyMediaplayer::setListWidCurrentRow()
+{
+    ui.listWidget->setCurrentRow(m_iCurVideoPos);
 }
 
 void MyMediaplayer::vlcEvents(const libvlc_event_t* ev, void* param)
@@ -353,19 +362,21 @@ void MyMediaplayer::vlcEvents(const libvlc_event_t* ev, void* param)
     {
     }
     break;
-    case libvlc_MediaPlayerVout:
-    {
-        qDebug() << ev->u.media_player_vout.new_count;
-    }
-    break;
     case libvlc_MediaPlayerLengthChanged:
     {
         int time = (ev->u.media_player_length_changed.new_length);
-        qDebug() << "qqqq" << time;
         QString strtime = "";
         m_ptrThis->transferTime(strtime, time);
         m_ptrThis->ui.horizontalSlider->setMaximum(time);
         m_ptrThis->ui.totalTimelabel->setText(strtime);
+    }
+    break;
+    case libvlc_MediaPlayerMediaChanged:
+    {
+        auto media = ev->u.media_player_media_changed.new_media;
+        int index = libvlc_media_list_index_of_item(m_ptrThis->m_ptrMediaList, media);
+        m_ptrThis->m_iCurVideoPos = index;
+        m_ptrThis->setListWidCurrentRow();
     }
     break;
     default:
